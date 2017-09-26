@@ -98,7 +98,7 @@ m1 <-  with(train1, smooth.spline(x, y, df=optimal$df))
 output <- predict(m1, test1$x) %>% 
     tibble::as.tibble()
 
-ggplot(output) + geom_line(aes(x,y, color = "Best Spline Model"), size=3) + 
+ggplot(output) + geom_line(aes(x,y, color = "Best Spline Model"), size=2) + 
   geom_point(data=data1, aes(x,y), alpha=0.2)+
   labs(list(title = "Optimal Spline Model"))
 ```
@@ -165,7 +165,7 @@ m2 <-  with(data2, smooth.spline(x, y, df=est$df))
 output <- predict(m2, data2$x) %>% 
     tibble::as.tibble()
 
-ggplot(output) + geom_line(aes(x,y, color = "Best Spline Model"), size=3) + 
+ggplot(output) + geom_line(aes(x,y, color = "Best Spline Model"), size=2) + 
   geom_point(data=data2, aes(x,y),alpha=0.2)+
   labs(list(title = "Optimal Spline Model"))
 ```
