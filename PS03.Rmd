@@ -1,6 +1,6 @@
 ---
 title: "STAT/MATH 495: Problem Set 03"
-author: "WRITE YOUR NAME HERE"
+author: "Brendan Seto"
 date: "2017-09-26"
 output:
   html_document:
@@ -9,6 +9,7 @@ output:
     toc_depth: 2
     collapsed: false
     smooth_scroll: false
+    code_folding: hide
 ---
 
 ```{r setup, include=FALSE}
@@ -16,6 +17,8 @@ knitr::opts_chunk$set(echo = TRUE, fig.width=8, fig.height=4.5)
 
 # Load packages
 library(tidyverse)
+library(mosaic)
+
 data1 <- read_csv("data/data1.csv")
 data2 <- read_csv("data/data2.csv")
 ```
@@ -34,11 +37,135 @@ For both `data1` and `data2` tibbles (a tibble is a data frame with some
 
 # Data 1
 
-```{r, echo=TRUE, warning=FALSE, message=FALSE}
+## Finding Best DF
+The first thing to do was determine the optimal degrees of freedom.  This was accomplished by creating a function that created spline models with incrementally increasing df, then graphing the resulting RMSE.  The df with the lowest RMSE is optimal.  
+
+
+```{r, Function, warning=FALSE, message=FALSE}
+# Seperate my training/testing data
+train1 <- sample_n(data1, 1500)
+test1 <- anti_join(data1, train1, by = "ID")
+
+# Create spline models
+bestdf <- function(df){
+  ## Right
+  m_splineR <- with(train1, smooth.spline(x, y, df=df))
+  outputR <- predict(m_splineR, test1$x) %>% 
+    tibble::as.tibble() %>% cbind(true = test1$y) %>% 
+    # Score with RMSE
+    mutate(se = (true-y)^2) %>% summarise(R = sqrt(mean(se)))
+
+  ## Left
+  m_splineL <- with(test1, smooth.spline(x, y, df=df))
+  outputL <- predict(m_splineL, train1$x) %>% 
+    tibble::as.tibble() %>% cbind(true = train1$y) %>% 
+    # Score with RMSE
+    mutate(se = (true-y)^2) %>% summarise(L = sqrt(mean(se)))
+  output <- c(outputR$R, outputL$L, (outputR$R+outputL$L)/2,df)
+  return(output)
+}
+
+
+
+all <- as.data.frame(t(sapply(seq(1.1,100,.1), bestdf)))
+colnames(all) <- c("R","L","RMSE","df")
+all <- all %>% gather(type,RMSE, R:RMSE)
 ```
+
+Figure 1 represents the RMSE vs DF of my spline models.  Note that the train and test data had a 50-50 split.  Thus we expect that switching the labels of our two datasets (noted right and left in the code) should not change our results too much.  Interestingly there is a change.  I'll look at that with the next data.  
+
+The black dashed line represents the minimum of the function.  The value and associated RMSE is presented below.  Note that **RMSE is the estimate of $\widehat{\sigma}$**!
+
+```{r Optimal DF}
+optimal <- all %>% filter(RMSE == min(all %>% filter(type == "RMSE") %>% select(RMSE)))
+optimal
+```
+
+```{r Plot}
+ggplot(all) + geom_point(aes(df, RMSE, color = type), size=1, alpha=0.1) +
+  geom_point(data=filter(all, type=="RMSE"),aes(df, RMSE, color = type), size=1) +
+  theme_bw()+
+  labs(list(title = "Figure 1: RMSE vs DF. Spline Model of Data 1"))+
+  geom_vline(xintercept = optimal$df, linetype = "longdash")
+
+```
+
+
+## Spline Model
+
+```{r Spline Model}
+m1 <-  with(train1, smooth.spline(x, y, df=optimal$df))
+output <- predict(m1, test1$x) %>% 
+    tibble::as.tibble()
+
+ggplot(output) + geom_line(aes(x,y, color = "Best Spline Model"), size=3) + 
+  geom_point(data=data1, aes(x,y), alpha=0.2)+
+  labs(list(title = "Optimal Spline Model"))
+```
+
 
 # Data 2
 
-```{r, echo=TRUE, warning=FALSE, message=FALSE}
+Time for the second trial!  This time I calculated the optimal df and RMSE for 10 different samples.  After that, the procedure is the same.  
+
+```{r, Function 2, warning=FALSE, message=FALSE}
+# Create spline models
+bestdf2 <- function(df, data){
+  
+  # Seperate my training/testing data
+  train2 <- sample_n(data, 1500)
+  test2 <- anti_join(data, train2, by = "ID")
+  
+  ## Right
+  m_splineR <- with(train2, smooth.spline(x, y, df=df))
+  outputR <- predict(m_splineR, test2$x) %>% 
+    tibble::as.tibble() %>% cbind(true = test2$y) %>% 
+    # Score with RMSE
+    mutate(se = (true-y)^2) %>% summarise(R = sqrt(mean(se)))
+
+  ## Left
+  m_splineL <- with(test2, smooth.spline(x, y, df=df))
+  outputL <- predict(m_splineL, train2$x) %>% 
+    tibble::as.tibble() %>% cbind(true = train2$y) %>% 
+    # Score with RMSE
+    mutate(se = (true-y)^2) %>% summarise(L = sqrt(mean(se)))
+  output <- c((outputR$R+outputL$L)/2,df)
+  return(output)
+}
+
+
+many <- function(data){
+  all2 <- as.data.frame(t(sapply(seq(1.1,100,.1), bestdf2,data=data)))
+  colnames(all2) <- c("RMSE","df")
+  optimal2 <- all2 %>% filter(RMSE == min(all2  %>% select(RMSE)))
+  return(optimal2)
+}
+
+# manyTrials <- do(10, parallel = TRUE)*many(data2)
+# Doesn't work in a reasonable amount of time.  I ran it, then saved the data.  Will just read in when kniting.  
+# write.csv(manyTrials, "manyTrials.csv")
+
+manyTrials <- read.csv("manyTrials.csv")
+
 ```
 
+```{r, Optimal 2}
+est <- manyTrials %>% summarise(dfSD = sd(df),df = mean(df), RMSEsd = sd(RMSE),  RMSEM = mean(RMSE))
+est
+```
+
+Interesting.  The df does vary a lot.  In the (relatively small) sample, the sd was `r round(est$dfSD, 2)`.  This is in contrast to the RMSE, which had an sd of `r round(est$RMSEsd, 2)`.  This suggests we do not have to be extraordinarily precise in our df estimates, although the small sample size of this experiment does provide some caveats.    
+
+Recall again that RMSE is the estimate of $\widehat{\sigma}$.  
+
+## Spline Model
+
+```{r, Spline 2}
+m2 <-  with(data2, smooth.spline(x, y, df=est$df))
+output <- predict(m2, data2$x) %>% 
+    tibble::as.tibble()
+
+ggplot(output) + geom_line(aes(x,y, color = "Best Spline Model"), size=3) + 
+  geom_point(data=data2, aes(x,y),alpha=0.2)+
+  labs(list(title = "Optimal Spline Model"))
+```
