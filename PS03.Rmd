@@ -9,7 +9,7 @@ output:
     toc_depth: 2
     collapsed: false
     smooth_scroll: false
-    code_folding: hide
+    code_folding: show
 ---
 
 ```{r setup, include=FALSE}
@@ -169,3 +169,57 @@ ggplot(output) + geom_line(aes(x,y, color = "Best Spline Model"), size=2) +
   geom_point(data=data2, aes(x,y),alpha=0.2)+
   labs(list(title = "Optimal Spline Model"))
 ```
+
+
+# Try 3
+
+I'm curious to know if the number of folds effects the final result.  I'll use data 1 for this.  
+
+First thing I did is create a function that takes df and test data and outputs the resulting RMSE.  Note that I could go through the whole process of finding optimal df again.  I tried it, but the function took forever to run and really wasn't worth it.  I'm really just interested in how RMSE and df changes by number of folds and setting cv=TRUE on my spline models allows me to see that.  
+
+```{r, Spline model 3,warning=FALSE}
+output <- function(test){
+  
+  # Take test data out of train
+  train <- anti_join(data1, test, by = "ID")
+  
+  ## Spline Model
+  m_spline <- with(train, smooth.spline(x, y, cv = TRUE))
+  output <- predict(m_spline, test$x) %>% 
+    tibble::as.tibble() %>% cbind(true = test$y) %>% 
+    # Score with RMSE
+    mutate(se = (true-y)^2) %>% summarise(RMSE = sqrt(mean(se)), df = m_spline$df)
+  
+  # Return RMSE and df for this dataset
+  return(output)
+}
+```
+
+I can now pass different test folds into this the output function to get an average RMSE
+
+```{r, Folds Function, warning=FALSE}
+folds <- function(n){
+  nr = nrow(data1)
+  ## Split the dataframe into different ammounts of folds. Run output function on each
+  ave <-   sapply(seq(1,n), function(i) output(split(data1, rep(1:ceiling(nr/n), each=n, length.out=nr))[[i]]))
+  
+  ## Return average RMSE accross all folds
+  return(cbind(RMSE = mean(unlist(ave[1,])), df = ave[2,1]))
+}
+```
+
+Now I run my function with 2 through 20 folds and see what happens.
+
+```{r, warning=FALSE}
+f <- as.data.frame(t(sapply(seq(2,20), folds))) %>% mutate(fold = seq(2,20))
+colnames(f) <- c("df","RMSE", "fold")
+f$df <- unlist(f$df)
+```
+
+Here is a plot of the results.  Neither the RMSE or df seem to vary greatly after the first couple folds.  Very early number of folds (2-4) may have lower optimal df, but the difference is not very stark.  
+
+```{r}
+ggplot(f) + geom_point(aes(fold,unlist(RMSE), size=df, color = df))+
+  labs(title = "Effect of Number of Folds on RMSE and df for Spline Models", x = "Number of Folds", y="RMSE")
+```
+
